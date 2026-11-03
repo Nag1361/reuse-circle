@@ -17,11 +17,16 @@ export function AuthProvider({ children }) {
     } finally { if (String(ownerId) === String(user?.id)) setWishlistLoading(false); }
   };
   useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
     api.get('/auth/me')
       .then((r) => setUser(r.data.data.user))
       .catch(() => {
         setUser(null);
         if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+        delete api.defaults.headers.common['Authorization'];
       })
       .finally(() => setLoading(false));
   }, []);
@@ -36,14 +41,26 @@ export function AuthProvider({ children }) {
     }).catch(() => { if (active) setWishlistIds(new Set()); }).finally(() => { if (active) setWishlistLoading(false); });
     return () => { active = false; };
   }, [user?.id]);
+  const loginUser = (userData, token) => {
+    if (token && typeof window !== 'undefined') {
+      localStorage.setItem('reusecircle_token', token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+    setUser(userData);
+  };
   const refresh = async () => {
     try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
       const { data } = await api.get('/auth/me');
       setUser(data.data.user);
       return data.data.user;
     } catch {
       setUser(null);
       if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+      delete api.defaults.headers.common['Authorization'];
       return null;
     }
   };
@@ -58,10 +75,11 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch {}
     if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+    delete api.defaults.headers.common['Authorization'];
     setUser(null);
     setWishlistIds(new Set());
     setWishlistOwnerId(null);
   };
-  return <AuthContext.Provider value={{ user, setUser, loading, refresh, logout, wishlistIds, wishlistLoading, loadWishlist, toggleWishlist }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, setUser, loginUser, loading, refresh, logout, wishlistIds, wishlistLoading, loadWishlist, toggleWishlist }}>{children}</AuthContext.Provider>;
 }
 export const useAuth = () => useContext(AuthContext);

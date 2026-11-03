@@ -2,9 +2,9 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 function extractToken(req) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim();
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && /^Bearer\s+/i.test(authHeader)) {
+    return authHeader.replace(/^Bearer\s+/i, '').trim();
   }
   return req.cookies?.reusecircle_token;
 }
