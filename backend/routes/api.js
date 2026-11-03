@@ -91,14 +91,14 @@ export function createApi(config) {
     }
     const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
-    ok(res, { user: userResponse(user) }, 'Account created successfully', 201);
+    ok(res, { user: userResponse(user), token }, 'Account created successfully', 201);
   }));
   router.post('/auth/login', [body('email').trim().isEmail().normalizeEmail(), body('password').isString().notEmpty(), validate], asyncRoute(async (req, res) => {
     const user = await User.findOne({ email: req.body.email.toLowerCase() }).select('+passwordHash');
     if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) return res.status(401).json({ success: false, message: 'Email or password is incorrect' });
     const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
-    ok(res, { user: userResponse(user) }, 'Welcome back');
+    ok(res, { user: userResponse(user), token }, 'Welcome back');
   }));
   router.post('/auth/google', [body('credential').isString().notEmpty(), validate], asyncRoute(async (req, res) => {
     if (!googleClient) return res.status(503).json({ success: false, message: 'Google sign-in is not configured' });
@@ -129,7 +129,7 @@ export function createApi(config) {
     }
     const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
-    ok(res, { user: userResponse(user) }, 'Welcome back');
+    ok(res, { user: userResponse(user), token }, 'Welcome back');
   }));
   router.post('/auth/logout', (req, res) => { res.clearCookie('reusecircle_token', { ...cookieOptions(config), maxAge: undefined }); ok(res, null, 'Logged out successfully'); });
   router.get('/auth/me', auth, (req, res) => ok(res, { user: userResponse(req.user) }));

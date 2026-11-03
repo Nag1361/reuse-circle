@@ -16,7 +16,15 @@ export function AuthProvider({ children }) {
       }
     } finally { if (String(ownerId) === String(user?.id)) setWishlistLoading(false); }
   };
-  useEffect(() => { api.get('/auth/me').then((r) => setUser(r.data.data.user)).catch(() => setUser(null)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    api.get('/auth/me')
+      .then((r) => setUser(r.data.data.user))
+      .catch(() => {
+        setUser(null);
+        if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+      })
+      .finally(() => setLoading(false));
+  }, []);
   useEffect(() => {
     let active = true;
     if (!user) { setWishlistIds(new Set()); setWishlistOwnerId(null); return () => { active = false; }; }
@@ -28,7 +36,17 @@ export function AuthProvider({ children }) {
     }).catch(() => { if (active) setWishlistIds(new Set()); }).finally(() => { if (active) setWishlistLoading(false); });
     return () => { active = false; };
   }, [user?.id]);
-  const refresh = async () => { try { const { data } = await api.get('/auth/me'); setUser(data.data.user); return data.data.user; } catch { setUser(null); return null; } };
+  const refresh = async () => {
+    try {
+      const { data } = await api.get('/auth/me');
+      setUser(data.data.user);
+      return data.data.user;
+    } catch {
+      setUser(null);
+      if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+      return null;
+    }
+  };
   const toggleWishlist = async (listingId) => {
     const id = String(listingId);
     if (!user || wishlistOwnerId !== String(user.id)) throw new Error('Your account wishlist is still loading. Please try again.');
@@ -37,7 +55,13 @@ export function AuthProvider({ children }) {
     setWishlistIds((current) => { const updated = new Set(current); if (next) updated.add(id); else updated.delete(id); return updated; });
     return next;
   };
-  const logout = async () => { await api.post('/auth/logout'); setUser(null); setWishlistIds(new Set()); setWishlistOwnerId(null); };
+  const logout = async () => {
+    try { await api.post('/auth/logout'); } catch {}
+    if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+    setUser(null);
+    setWishlistIds(new Set());
+    setWishlistOwnerId(null);
+  };
   return <AuthContext.Provider value={{ user, setUser, loading, refresh, logout, wishlistIds, wishlistLoading, loadWishlist, toggleWishlist }}>{children}</AuthContext.Provider>;
 }
 export const useAuth = () => useContext(AuthContext);

@@ -1,9 +1,18 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+
+function extractToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  return req.cookies?.reusecircle_token;
+}
+
 export function authRequired(secret) {
   return async (req, res, next) => {
     try {
-      const token = req.cookies?.reusecircle_token;
+      const token = extractToken(req);
       if (!token) return res.status(401).json({ success: false, message: 'Please log in to continue' });
       const payload = jwt.verify(token, secret);
       const user = await User.findById(payload.sub).select('name email phone role');
@@ -14,7 +23,7 @@ export function authRequired(secret) {
 }
 export function authOptional(secret) {
   return async (req, res, next) => {
-    const token = req.cookies?.reusecircle_token;
+    const token = extractToken(req);
     if (!token) return next();
     try {
       const payload = jwt.verify(token, secret);
