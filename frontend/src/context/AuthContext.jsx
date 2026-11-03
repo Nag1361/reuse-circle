@@ -18,7 +18,12 @@ export function AuthProvider({ children }) {
   };
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
-    if (token) {
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    if (api.defaults?.headers?.common) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
     api.get('/auth/me')
@@ -26,7 +31,7 @@ export function AuthProvider({ children }) {
       .catch(() => {
         setUser(null);
         if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
-        delete api.defaults.headers.common['Authorization'];
+        if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
       })
       .finally(() => setLoading(false));
   }, []);
@@ -44,14 +49,16 @@ export function AuthProvider({ children }) {
   const loginUser = (userData, token) => {
     if (token && typeof window !== 'undefined') {
       localStorage.setItem('reusecircle_token', token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      if (api.defaults?.headers?.common) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
     }
     setUser(userData);
   };
   const refresh = async () => {
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
-      if (token) {
+      if (token && api.defaults?.headers?.common) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       const { data } = await api.get('/auth/me');
@@ -60,7 +67,7 @@ export function AuthProvider({ children }) {
     } catch {
       setUser(null);
       if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
-      delete api.defaults.headers.common['Authorization'];
+      if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
       return null;
     }
   };
@@ -75,7 +82,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch {}
     if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
-    delete api.defaults.headers.common['Authorization'];
+    if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
     setUser(null);
     setWishlistIds(new Set());
     setWishlistOwnerId(null);

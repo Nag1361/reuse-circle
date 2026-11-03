@@ -89,14 +89,14 @@ export function createApi(config) {
       if (error?.code === 11000 && error.keyPattern?.phone) return res.status(409).json({ success: false, message: 'An account with this phone number already exists' });
       throw error;
     }
-    const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const token = jwt.sign({ sub: String(user._id || user.id) }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
     ok(res, { user: userResponse(user), token }, 'Account created successfully', 201);
   }));
   router.post('/auth/login', [body('email').trim().isEmail().normalizeEmail(), body('password').isString().notEmpty(), validate], asyncRoute(async (req, res) => {
     const user = await User.findOne({ email: req.body.email.toLowerCase() }).select('+passwordHash');
     if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) return res.status(401).json({ success: false, message: 'Email or password is incorrect' });
-    const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const token = jwt.sign({ sub: String(user._id || user.id) }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
     ok(res, { user: userResponse(user), token }, 'Welcome back');
   }));
@@ -127,7 +127,7 @@ export function createApi(config) {
     } else if (user.googleId !== payload.sub) {
       return res.status(401).json({ success: false, message: 'This Google account is not linked to the account email' });
     }
-    const token = jwt.sign({ sub: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const token = jwt.sign({ sub: String(user._id || user.id) }, config.jwtSecret, { expiresIn: '7d' });
     res.cookie('reusecircle_token', token, cookieOptions(config));
     ok(res, { user: userResponse(user), token }, 'Welcome back');
   }));
