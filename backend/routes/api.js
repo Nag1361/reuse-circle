@@ -24,16 +24,40 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next
 const ok = (res, data, message = 'Success', status = 200) => res.status(status).json({ success: true, message, data });
 const uploadsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
 const imageUpload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsPath,
-    filename: (req, file, callback) => callback(null, `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase()}`)
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, callback) => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)
     ? callback(null, true)
     : callback(new Error('Only JPEG, PNG, WebP, or GIF images are allowed'))
 });
-const uploadedImageUrl = (req) => req.file ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}` : '';
+
+const saveUploadedImage = async (file) => {
+  if (!file) return '';
+  const filename = `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase()}`;
+  try {
+    const db = mongoose.connection.db;
+    if (db) {
+      const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'uploads' });
+      await new Promise((resolve, reject) => {
+        const uploadStream = bucket.openUploadStream(filename, {
+          contentType: file.mimetype
+        });
+        uploadStream.on('error', reject);
+        uploadStream.on('finish', resolve);
+        uploadStream.end(file.buffer);
+      });
+    }
+  } catch (err) {
+    console.error('GridFS upload warning:', err.message);
+  }
+  try {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+    fs.writeFileSync(path.join(uploadsPath, filename), file.buffer);
+  } catch {}
+  return filename;
+};
+
+const uploadedImageUrl = (filename, req) => filename ? `${req.protocol}://${req.get('host')}/uploads/${filename}` : '';
 const ownListing = async (req, res, allowModerator = false) => {
   const listing = await Listing.findById(req.params.id);
   if (!listing) { res.status(404).json({ success: false, message: 'Listing not found' }); return null; }
@@ -182,7 +206,8 @@ export function createApi(config) {
   }));
   router.post('/listings', auth, imageUpload.single('image'), [body('title').trim().isLength({ min: 2, max: 120 }), body('category').trim().isLength({ min: 2, max: 80 }), body('condition').isIn(CONDITIONS), body('description').trim().isLength({ min: 10, max: 2000 }), body('pickupArea').trim().isLength({ min: 2, max: 120 }), body('pickupAddress').trim().isLength({ min: 5, max: 300 }), body('pickupTime').trim().isLength({ min: 3, max: 200 }), body('contactPhone').optional({ values: 'falsy' }).custom((value) => Boolean(normalizePhone(value))).withMessage('Please enter a valid international contact phone number'), body('imageUrl').optional({ values: 'falsy' }).isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('Image URL must be a valid http or https URL'), validate], asyncRoute(async (req, res) => {
     const contactPhone = req.body.contactPhone ? normalizePhone(req.body.contactPhone) : '';
-    const listing = await Listing.create({ ownerId: req.user._id, title: req.body.title, category: req.body.category, condition: req.body.condition, description: req.body.description, pickupArea: req.body.pickupArea, pickupAddress: req.body.pickupAddress, pickupTime: req.body.pickupTime, contactPhone, imageUrl: uploadedImageUrl(req) || req.body.imageUrl || '' });
+    const uploadedFilename = await saveUploadedImage(req.file);
+    const listing = await Listing.create({ ownerId: req.user._id, title: req.body.title, category: req.body.category, condition: req.body.condition, description: req.body.description, pickupArea: req.body.pickupArea, pickupAddress: req.body.pickupAddress, pickupTime: req.body.pickupTime, contactPhone, imageUrl: uploadedImageUrl(uploadedFilename, req) || req.body.imageUrl || '' });
     ok(res, { listing: safeListing(listing, req, true) }, 'Listing created successfully', 201);
   }));
   router.get('/listings/:id', authOptional(config.jwtSecret), [idRule, validate], asyncRoute(async (req, res) => {
@@ -205,7 +230,7 @@ export function createApi(config) {
     const fields = ['title', 'category', 'condition', 'description', 'pickupArea', 'pickupAddress', 'pickupTime', 'imageUrl'];
     for (const field of fields) if (req.body[field] !== undefined) listing[field] = req.body[field];
     if (req.body.contactPhone !== undefined) listing.contactPhone = req.body.contactPhone ? normalizePhone(req.body.contactPhone) : '';
-    if (req.file) listing.imageUrl = uploadedImageUrl(req);
+    if (req.file) { const uploadedFilename = await saveUploadedImage(req.file); listing.imageUrl = uploadedImageUrl(uploadedFilename, req); }
     else if (req.body.imageUrl !== undefined) listing.imageUrl = req.body.imageUrl;
     else if (req.body.image !== undefined) listing.imageUrl = req.body.image;
     await listing.save(); ok(res, { listing: safeListing(listing, req, true) }, 'Listing updated successfully');

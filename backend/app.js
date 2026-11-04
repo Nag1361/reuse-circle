@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import mongoose from 'mongoose';
 import { rateLimit } from 'express-rate-limit';
 import { createApi } from './routes/api.js';
 import { errorHandler, notFound } from './middleware/errors.js';
@@ -27,6 +28,32 @@ export function createApp(config) {
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
+
+  app.get('/uploads/:filename', async (req, res, next) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const localFile = path.join(uploadsPath, filename);
+      if (fs.existsSync(localFile)) {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.sendFile(localFile);
+      }
+      const db = mongoose.connection.db;
+      if (!db) return next();
+      const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'uploads' });
+      const files = await bucket.find({ filename }).toArray();
+      if (!files.length) return next();
+      const file = files[0];
+      res.setHeader('Content-Type', file.contentType || 'image/jpeg');
+      res.setHeader('Content-Length', file.length);
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      bucket.openDownloadStreamByName(filename).pipe(res);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   app.use('/uploads', express.static(uploadsPath, {
     maxAge: '1d',
     setHeaders(res) {

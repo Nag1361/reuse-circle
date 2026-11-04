@@ -13,10 +13,10 @@ export function resolveImageUrl(url) {
     return `${backendOrigin}${cleanPath}`;
   }
 
-  // Localhost upload path pointing to localhost/127.0.0.1 on any port:
-  const localhostMatch = trimmed.match(/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/uploads\/[^\s]+)$/i);
-  if (localhostMatch) {
-    return `${backendOrigin}${localhostMatch[1]}`;
+  // Any absolute upload path (localhost, render, http/https):
+  const uploadMatch = trimmed.match(/^https?:\/\/[^\/]+(\/uploads\/[^\s]+)$/i);
+  if (uploadMatch) {
+    return `${backendOrigin}${uploadMatch[1]}`;
   }
 
   return trimmed;
