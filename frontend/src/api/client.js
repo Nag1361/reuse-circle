@@ -6,13 +6,26 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 });
 
-const initialToken = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+const getActiveToken = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    // Clear legacy localStorage token so it doesn't leak across tabs
+    localStorage.removeItem('reusecircle_token');
+  } catch {}
+  try {
+    return sessionStorage.getItem('reusecircle_token');
+  } catch {
+    return null;
+  }
+};
+
+const initialToken = getActiveToken();
 if (initialToken && api.defaults?.headers?.common) {
   api.defaults.headers.common['Authorization'] = `Bearer ${initialToken}`;
 }
 
 api.interceptors.request.use((config) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+  const token = getActiveToken();
   if (token) {
     config.headers = config.headers || {};
     if (typeof config.headers.set === 'function') {

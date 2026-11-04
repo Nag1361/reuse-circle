@@ -17,7 +17,13 @@ export function AuthProvider({ children }) {
     } finally { if (String(ownerId) === String(user?.id)) setWishlistLoading(false); }
   };
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+    let token = null;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('reusecircle_token');
+        token = sessionStorage.getItem('reusecircle_token');
+      } catch {}
+    }
     if (!token) {
       setUser(null);
       setLoading(false);
@@ -30,7 +36,10 @@ export function AuthProvider({ children }) {
       .then((r) => setUser(r.data.data.user))
       .catch(() => {
         setUser(null);
-        if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('reusecircle_token');
+          localStorage.removeItem('reusecircle_token');
+        }
         if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
       })
       .finally(() => setLoading(false));
@@ -48,7 +57,10 @@ export function AuthProvider({ children }) {
   }, [user?.id]);
   const loginUser = (userData, token) => {
     if (token && typeof window !== 'undefined') {
-      localStorage.setItem('reusecircle_token', token);
+      try {
+        localStorage.removeItem('reusecircle_token');
+        sessionStorage.setItem('reusecircle_token', token);
+      } catch {}
       if (api.defaults?.headers?.common) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
@@ -57,7 +69,10 @@ export function AuthProvider({ children }) {
   };
   const refresh = async () => {
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('reusecircle_token') : null;
+      let token = null;
+      if (typeof window !== 'undefined') {
+        token = sessionStorage.getItem('reusecircle_token');
+      }
       if (token && api.defaults?.headers?.common) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
@@ -66,7 +81,10 @@ export function AuthProvider({ children }) {
       return data.data.user;
     } catch {
       setUser(null);
-      if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('reusecircle_token');
+        localStorage.removeItem('reusecircle_token');
+      }
       if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
       return null;
     }
@@ -81,7 +99,10 @@ export function AuthProvider({ children }) {
   };
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch {}
-    if (typeof window !== 'undefined') localStorage.removeItem('reusecircle_token');
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('reusecircle_token');
+      localStorage.removeItem('reusecircle_token');
+    }
     if (api.defaults?.headers?.common) delete api.defaults.headers.common['Authorization'];
     setUser(null);
     setWishlistIds(new Set());
