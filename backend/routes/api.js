@@ -331,10 +331,26 @@ export function createApi(config) {
     const notifications = await Notification.find({ userId: req.user._id }).sort({ createdAt: -1 }).lean();
     ok(res, { notifications, unread: notifications.filter((notification) => !notification.readAt).length });
   }));
+  router.get('/me/notifications/unread-count', auth, asyncRoute(async (req, res) => {
+    const unread = await Notification.countDocuments({ userId: req.user._id, readAt: null });
+    ok(res, { unread });
+  }));
   router.patch('/notifications/:id/read', auth, [idRule, validate], asyncRoute(async (req, res) => {
-    const notification = await Notification.findOneAndUpdate({ _id: req.params.id, userId: req.user._id }, { $set: { readAt: new Date() } }, { new: true });
+    const notification = await Notification.findById(req.params.id);
+
     if (!notification) return res.status(404).json({ success: false, message: 'Notification not found' });
+    if (!notification.userId.equals(req.user._id)) return res.status(403).json({ success: false, message: 'You can only access your own notifications' });
+    notification.readAt = new Date();
+    await notification.save();
+
+
+
+
     ok(res, { notification }, 'Notification marked as read');
+  }));
+  router.patch('/me/notifications/read-all', auth, asyncRoute(async (req, res) => {
+    await Notification.updateMany({ userId: req.user._id, readAt: null }, { $set: { readAt: new Date() } });
+    ok(res, null, 'All notifications marked as read');
   }));
   router.get('/me/wishlist', auth, asyncRoute(async (req, res) => {
     const entries = await Wishlist.find({ userId: req.user._id }).populate({ path: 'listingId', populate: { path: 'ownerId', select: 'name' } }).sort({ createdAt: -1 }).lean();
@@ -362,8 +378,17 @@ export function createApi(config) {
     if (!listing) return res.status(404).json({ success: false, message: 'Listing not found' });
     if (listing.status === 'collected' && !listing.ownerId.equals(req.user._id) && req.user.role !== 'moderator') return res.status(404).json({ success: false, message: 'Listing not found' });
     if (listing.ownerId.equals(req.user._id)) return res.status(403).json({ success: false, message: 'You cannot report your own listing' });
-    if (await ContentReport.exists({ listingId: listing._id, reporterId: req.user._id })) return res.status(409).json({ success: false, message: 'You have already reported this listing' });
+    if (await ContentReport.exists({ listingId: listing._id, reporterId: req.user._id, status: 'pending' })) return res.status(409).json({ success: false, message: 'You have already reported this listing' });
     const report = await ContentReport.create({ listingId: listing._id, reporterId: req.user._id, reason: req.body.reason });
+    const message = `Your listing '${listing.title}' has been reported for potentially containing fake or misleading information. Please review your listing.`;
+    await Notification.create({
+      userId: listing.ownerId,
+      listingId: listing._id,
+      reportId: report._id,
+      type: 'listing_reported',
+      message,
+      reason: req.body.reason
+    });
     ok(res, { report }, 'Report submitted for review', 201);
   }));
   router.get('/moderation/reports', auth, moderatorOnly, asyncRoute(async (req, res) => {
@@ -374,6 +399,21 @@ export function createApi(config) {
   router.patch('/moderation/reports/:id/status', auth, moderatorOnly, [idRule, body('status').isIn(['reviewed', 'dismissed']), validate], asyncRoute(async (req, res) => {
     const report = await ContentReport.findByIdAndUpdate(req.params.id, { $set: { status: req.body.status } }, { new: true, runValidators: true });
     if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
+    const listing = await Listing.findById(report.listingId);
+    if (listing) {
+      const isConfirmed = req.body.status === 'reviewed';
+      const modMessage = isConfirmed
+        ? `A moderator has reviewed and confirmed the report on your listing '${listing.title}'. Please ensure your listing adheres to community guidelines.`
+        : `The report on your listing '${listing.title}' has been reviewed and dismissed by a moderator. Your listing remains active.`;
+      await Notification.create({
+        userId: listing.ownerId,
+        listingId: listing._id,
+        reportId: report._id,
+        type: isConfirmed ? 'report_reviewed' : 'report_dismissed',
+        message: modMessage,
+        reason: report.reason
+      });
+    }
     ok(res, { report }, 'Report resolved');
   }));
   router.get('/dashboard/summary', auth, asyncRoute(async (req, res) => {

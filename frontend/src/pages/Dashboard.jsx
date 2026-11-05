@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FiArrowRight, FiInbox, FiPackage, FiPlus } from 'react-icons/fi';
+import { FiArrowRight, FiInbox, FiPackage, FiPlus, FiAlertTriangle, FiCheckCircle, FiCheck, FiInfo } from 'react-icons/fi';
 import api from '../api/client';
 import ListingCard from '../components/ListingCard';
 import { EmptyState, ErrorState, Loading } from '../components/States';
@@ -11,24 +11,30 @@ export default function Dashboard() {
   const [requests, setRequests] = useState([]);
   const [recent, setRecent] = useState([]);
   const [wishlist, setWishlist] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [incoming, setIncoming] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     try {
-      const [s, l, r, recentResponse, wishlistResponse] = await Promise.all([
+      const [s, l, r, recentResponse, wishlistResponse, notifResponse] = await Promise.all([
         api.get('/dashboard/summary'),
         api.get('/me/listings'),
         api.get('/me/requests'),
         api.get('/me/recently-viewed'),
-        api.get('/me/wishlist')
+        api.get('/me/wishlist'),
+        api.get('/me/notifications').catch(() => ({ data: { data: { notifications: [], unread: 0 } } }))
       ]);
       setSummary(s.data.data);
       setListings(l.data.data.listings);
       setRequests(r.data.data.requests.filter((request) => request.listingId));
       setRecent(recentResponse.data.data.listings);
       setWishlist(wishlistResponse.data.data.listings);
+      setNotifications(notifResponse.data.data.notifications || []);
+      setUnreadCount(notifResponse.data.data.unread || 0);
+
       const entries = await Promise.all(l.data.data.listings
         .filter((x) => ['available', 'reserved', 'sold'].includes(x.status))
         .map(async (x) => {
@@ -47,6 +53,30 @@ export default function Dashboard() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const markNotificationAsRead = async (id) => {
+    try {
+      await api.patch(`/notifications/${id}/read`);
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === id ? { ...n, readAt: new Date().toISOString() } : n))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      await api.patch('/me/notifications/read-all');
+      setNotifications((prev) =>
+        prev.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() }))
+      );
+      setUnreadCount(0);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const act = async (id, status) => {
     try {
@@ -110,6 +140,59 @@ export default function Dashboard() {
           </article>
         ))}
       </section>
+
+      {notifications.length > 0 && (
+        <section className="dash-section dashboard-notifications-section" aria-label="Notifications and alerts">
+          <div className="account-section-heading">
+            <div>
+              <span className="kicker">Important updates</span>
+              <h2>Notifications & Alerts {unreadCount > 0 && <span className="notification-badge-inline">{unreadCount} new</span>}</h2>
+            </div>
+            {unreadCount > 0 && (
+              <button className="button button-ghost button-small" type="button" onClick={markAllNotificationsAsRead}>
+                Mark all as read
+              </button>
+            )}
+          </div>
+          <div className="dashboard-notifications-list">
+            {notifications.map((n) => {
+              const isUnread = !n.readAt;
+              const isReport = n.type === 'listing_reported' || n.type === 'report_reviewed';
+              const isDismissed = n.type === 'report_dismissed';
+              return (
+                <article
+                  key={n._id}
+                  className={`dashboard-notification-card ${isReport ? 'card-warning' : isDismissed ? 'card-success' : 'card-info'} ${isUnread ? 'is-unread' : 'is-read'}`}
+                >
+                  <div className="notification-card-icon">
+                    {isReport ? <FiAlertTriangle aria-hidden="true" /> : isDismissed ? <FiCheckCircle aria-hidden="true" /> : <FiInfo aria-hidden="true" />}
+                  </div>
+                  <div className="notification-card-body">
+                    <p className="notification-card-message">{n.message}</p>
+                    {n.reason && (
+                      <p className="notification-card-reason">
+                        <strong>Reason provided:</strong> {n.reason}
+                      </p>
+                    )}
+                    <span className="notification-card-time">
+                      {new Date(n.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="notification-card-action">
+                    {isUnread ? (
+                      <button className="small-action" type="button" onClick={() => markNotificationAsRead(n._id)}>
+                        Mark as read
+                      </button>
+                    ) : (
+                      <span className="notification-read-badge"><FiCheck aria-hidden="true" /> Read</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="dash-section dashboard-listings-section">
         <div className="account-section-heading">

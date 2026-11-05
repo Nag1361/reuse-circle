@@ -115,14 +115,49 @@ test('wishlist entries are isolated per authenticated account',async()=>{
   assert.equal(await Wishlist.countDocuments({ listingId: listing._id }),1);
 });
 test('reports reject self reports, duplicates, and non-moderator resolution',async()=>{
-  const listing=(await createListing(ownerAgent)).body.data.listing;
-  await ownerAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'Something is wrong here.'}).expect(403);
-  const report=(await requesterAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'This listing seems inappropriate.'}).expect(201)).body.data.report;
-  await requesterAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'Another reason for report.'}).expect(409);
+  const listing=(await createListing(ownerAgent, 'Special Bookshelf')).body.data.listing;
+  await ownerAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'Fake or Misleading Description'}).expect(403);
+  const report=(await requesterAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'Fake or Misleading Description'}).expect(201)).body.data.report;
+  await requesterAgent.post(`/api/listings/${listing._id}/reports`).send({reason:'Fake or Misleading Description'}).expect(409);
+
+  // Requester cannot see owner notifications
+  const reqNotifs = (await requesterAgent.get('/api/me/notifications').expect(200)).body.data.notifications;
+  assert.equal(reqNotifs.length, 0);
+
+  // Owner receives persistent notification with exact required message
+  const ownerNotifs = (await ownerAgent.get('/api/me/notifications').expect(200)).body.data.notifications;
+  const reportNotif = ownerNotifs.find(n => n.type === 'listing_reported');
+  assert.ok(reportNotif);
+  assert.equal(reportNotif.message, `Your listing '${listing.title}' has been reported for potentially containing fake or misleading information. Please review your listing.`);
+
+  // Owner unread count is at least 1
+  const unreadBefore = (await ownerAgent.get('/api/me/notifications/unread-count').expect(200)).body.data.unread;
+  assert.ok(unreadBefore >= 1);
+
+  // Requester cannot mark owner notification as read (forbidden)
+  await requesterAgent.patch(`/api/notifications/${reportNotif._id}/read`).expect(403);
+
+  // Owner marks report notification as read
+  await ownerAgent.patch(`/api/notifications/${reportNotif._id}/read`).expect(200);
+
+  // Non-moderator cannot access moderation queue
   await ownerAgent.get('/api/moderation/reports').expect(403);
   const moderatorReports=await moderatorAgent.get('/api/moderation/reports').expect(200);
   assert.equal(moderatorReports.body.data.reports[0].listingId.pickupAddress,undefined);
+
+  // Moderator reviews report
   await moderatorAgent.patch(`/api/moderation/reports/${report._id}/status`).send({status:'reviewed'}).expect(200);
+
+  // Owner receives moderator decision notification
+  const ownerNotifsAfter = (await ownerAgent.get('/api/me/notifications').expect(200)).body.data.notifications;
+  const decisionNotif = ownerNotifsAfter.find(n => n.type === 'report_reviewed');
+  assert.ok(decisionNotif);
+  assert.match(decisionNotif.message, /moderator has reviewed and confirmed the report/);
+
+  // Owner marks all read
+  await ownerAgent.patch('/api/me/notifications/read-all').expect(200);
+  const unreadAfter = (await ownerAgent.get('/api/me/notifications/unread-count').expect(200)).body.data.unread;
+  assert.equal(unreadAfter, 0);
 });
 test('public listing payload does not expose owner email or password hash',async()=>{
   const listing=(await createListing(ownerAgent)).body.data.listing;

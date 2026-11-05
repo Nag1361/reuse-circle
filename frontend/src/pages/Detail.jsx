@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { FiHeart, FiMapPin, FiArrowLeft, FiPhone, FiUser } from 'react-icons/fi';
+import { FiHeart, FiMapPin, FiArrowLeft, FiPhone, FiUser, FiAlertCircle } from 'react-icons/fi';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { ErrorState, Loading } from '../components/States';
@@ -16,6 +16,9 @@ export default function Detail() {
   const [message, setMessage] = useState('');
   const [note, setNote] = useState(location.state?.message || '');
   const [report, setReport] = useState(false);
+  const [reportReason, setReportReason] = useState('Fake or Misleading Description');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [wishlistBusy, setWishlistBusy] = useState(false);
   const [currentRequest, setCurrentRequest] = useState(null);
   const [retry, setRetry] = useState(0);
@@ -55,19 +58,31 @@ export default function Detail() {
 
   const submitReport = async (e) => {
     e.preventDefault();
+    setReportSubmitting(true);
     try {
-      await api.post(`/listings/${id}/reports`, { reason: e.target.reason.value });
-      setNote('Thanks for helping keep the community safe.');
+      if (reportReason === 'Other' && reportDetails.trim().length < 5) {
+        setNote('Please provide a reason with at least 5 characters.');
+        setReportSubmitting(false);
+        return;
+      }
+      const fullReason = reportDetails.trim()
+        ? `${reportReason}: ${reportDetails.trim()}`
+        : reportReason;
+      await api.post(`/listings/${id}/reports`, { reason: fullReason });
+      setNote('Thanks for helping keep the community safe. Your report has been submitted.');
       setReport(false);
+      setReportDetails('');
     } catch (e) {
       setNote(e.message);
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
   if (error) return <main className="page-wrap"><ErrorState message={error} onRetry={() => { setItem(null); setRetry((value) => value + 1); }} /></main>;
   if (!item) return <Loading />;
 
-  const owner = user && String(item.ownerId) === String(user.id);
+  const owner = user && String(item.ownerId?._id || item.ownerId) === String(user.id || user._id);
   const statusLabel = item.status === 'reserved' ? 'Sold' : item.status;
   const wishlisted = wishlistIds?.has(String(id));
   const imageUrl = getListingImageUrl(item);
@@ -192,17 +207,53 @@ export default function Detail() {
                     Log in to request
                   </Link>
                 )}
-                <button className="report-link" type="button" onClick={() => user ? setReport(!report) : navigate('/login')}>
-                  Report this listing
-                </button>
-                {report && (
-                  <form className="request-form" onSubmit={submitReport}>
-                    <label>
-                      Why are you reporting this listing?
-                      <textarea name="reason" required minLength="5" maxLength="1000" rows="3" />
-                    </label>
-                    <button className="button button-outline" type="submit">Send report</button>
-                  </form>
+                {!owner && (
+                  <>
+                    <button
+                      className="report-link"
+                      type="button"
+                      onClick={() => user ? setReport(!report) : navigate(`/login?returnTo=${encodeURIComponent(`/listings/${id}`)}`)}
+                    >
+                      <FiAlertCircle aria-hidden="true" /> Report Item
+                    </button>
+                    {report && (
+                      <form className="request-form report-form" onSubmit={submitReport}>
+                        <label>
+                          Why are you reporting this item?
+                          <select
+                            className="input"
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value)}
+                            required
+                          >
+                            <option value="Fake or Misleading Description">Fake or Misleading Description</option>
+                            <option value="Inappropriate or Offensive Content">Inappropriate or Offensive Content</option>
+                            <option value="Item Unavailable or Prohibited">Item Unavailable or Prohibited</option>
+                            <option value="Spam or Duplicate Listing">Spam or Duplicate Listing</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </label>
+                        <label>
+                          Additional details (optional)
+                          <textarea
+                            value={reportDetails}
+                            onChange={(e) => setReportDetails(e.target.value)}
+                            maxLength="500"
+                            rows="2"
+                            placeholder="Provide any additional details or context for the moderators…"
+                          />
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button className="button button-outline" type="submit" disabled={reportSubmitting}>
+                            {reportSubmitting ? 'Submitting…' : 'Submit Report'}
+                          </button>
+                          <button className="button button-ghost" type="button" onClick={() => setReport(false)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </>
                 )}
               </>
             ) : (

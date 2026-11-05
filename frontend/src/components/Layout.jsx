@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { FiMenu, FiPlusCircle, FiRefreshCw, FiX } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -61,6 +62,7 @@ export function Layout() {
               </>
             )}
             {user?.role === 'moderator' && <NavLink to="/moderation" onClick={closeMenu}>Moderation</NavLink>}
+            {user && <NotificationBell />}
             {user ? (
               <>
                 <Link className="button button-small" to="/listings/new" onClick={closeMenu}>
